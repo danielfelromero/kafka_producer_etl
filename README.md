@@ -1,22 +1,36 @@
-# Kafka Producer ETL — Database Change Polling Lab
+# Kafka Producer ETL — Transactional Outbox Lab
 
-Laboratorio para observar cómo una nueva fila en una base de datos puede activar la publicación de un evento en Kafka.
+Laboratorio didáctico para mostrar cómo una inserción en una base de datos puede originar un evento que posteriormente se publica en Kafka.
 
 ## Arquitectura
 
 ```text
-insert_record.py -> SQLite (records) -> producer.py -> Kafka topic etl.records
+insert_record.py
+      |
+      v
+SQLite: records
+      |
+      | trigger AFTER INSERT
+      v
+SQLite: outbox (evento pendiente)
+      |
+      | producer.py consulta eventos pendientes
+      v
+Kafka topic: etl.records
+      |
+      v
+Consumidores independientes
 ```
 
-La base SQLite se inicializa sin registros de negocio. El productor consulta periódicamente los registros con ID superior al último checkpoint y publica cada uno en Kafka.
+La base de datos SQLite se inicializa sin registros de negocio. Al insertar un registro en `records`, un trigger de SQLite crea automáticamente una fila en `outbox`, dentro de la misma transacción. El productor consulta la tabla `outbox`, publica los eventos pendientes en Kafka y los marca como publicados después de recibir la confirmación de entrega.
 
-**Nota conceptual:** esta primera versión usa polling incremental; no es CDC nativo basado en WAL/binlog. Es una decisión intencional para aprender el patrón sin instalar un servidor adicional. En producción se pueden estudiar herramientas como Debezium y conectores CDC.
+Este diseño introduce el patrón **Transactional Outbox** de forma sencilla. El trigger no inicia directamente un proceso Python: crea de forma transaccional el evento pendiente; el productor lo detecta mediante polling.
 
 ## Requisitos
 
 - Python 3.10+
-- Broker Kafka accesible por TCP desde donde se ejecute el productor
-- Python package `confluent-kafka`
+- Apache Kafka accesible por TCP desde el entorno del productor
+- `confluent-kafka`
 
 ## Instalación
 
@@ -26,25 +40,33 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Inicializar la base vacía
+## 1. Inicializar la base de datos vacía
 
 ```bash
 python init_db.py
 ```
 
-Crea `data/events.db` y la tabla `records`, sin insertar filas.
+Crea `data/events.db`, las tablas `records` y `outbox`, y el trigger `trg_records_after_insert`. No inserta registros de negocio.
 
-## Kafka
+Puedes comprobarlo con:
 
-Se espera el broker en `localhost:9092` y el topic `etl.records`.
+```bash
+python -c "import sqlite3; c=sqlite3.connect('data/events.db'); print('records:', c.execute('select count(*) from records').fetchone()[0]); print('outbox:', c.execute('select count(*) from outbox').fetchone()[0])"
+```
+
+Ambos conteos deben ser cero en una inicialización nueva.
+
+## 2. Preparar Kafka
+
+El ejemplo asume un broker accesible en `localhost:9092` y un topic llamado `etl.records`.
 
 ```bash
 kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic etl.records --partitions 3 --replication-factor 1
 ```
 
-Para una clase en la que el broker esté en el Codespace del docente y los alumnos se conecten desde otros entornos, debe configurarse un endpoint TCP externo y `advertised.listeners` correctamente. No asumir que el port forwarding HTTP habitual de Codespaces permite transportar el protocolo Kafka.
+Para cambiar los parámetros, utiliza las variables de entorno descritas más adelante.
 
-## Ejecutar el productor detector
+## 3. Iniciar el productor
 
 En una terminal:
 
@@ -52,16 +74,9 @@ En una terminal:
 python producer.py
 ```
 
-El productor permanece activo y consulta la base cada segundo.
+El productor permanece activo y consulta la tabla `outbox` cada segundo. Solo intenta publicar los eventos cuyo estado sea `pending`.
 
-Variables opcionales:
-- `DB_PATH`: base SQLite (por defecto `data/events.db`)
-- `KAFKA_BOOTSTRAP_SERVERS`: broker (por defecto `localhost:9092`)
-- `KAFKA_TOPIC`: topic (por defecto `etl.records`)
-- `POLL_INTERVAL_SECONDS`: intervalo de consulta (por defecto `1`)
-- `CHECKPOINT_PATH`: checkpoint persistente (por defecto `data/producer_checkpoint.json`)
-
-## Insertar registros
+## 4. Insertar registros
 
 En otra terminal:
 
@@ -70,35 +85,70 @@ python insert_record.py --station ST-01 --temperature 27.4 --humidity 71.2 --sta
 python insert_record.py --station ST-02 --temperature 31.8 --humidity 83.0 --status alert
 ```
 
-Cada ejecución inserta una fila. El productor detecta el nuevo ID y lo publica en Kafka. También es posible ejecutar `python insert_record.py` sin argumentos y usar el modo interactivo.
+También puedes ejecutar `python insert_record.py` sin argumentos para utilizar el modo interactivo.
 
-## Evento publicado
+Al insertar una fila en `records`, el trigger crea la fila relacionada en `outbox`. El productor la detecta y la publica en Kafka. Para inspeccionar las dos tablas:
+
+```bash
+python -c "import sqlite3; c=sqlite3.connect('data/events.db'); print('records:', c.execute('select * from records').fetchall()); print('outbox:', c.execute('select * from outbox').fetchall())"
+```
+
+## 5. Estructura del evento Kafka
 
 ```json
 {
+  "event_id": 1,
   "record_id": 1,
+  "event_type": "record.created",
   "station_id": "ST-01",
   "temperature": 27.4,
   "humidity": 71.2,
   "status": "normal",
-  "created_at": "timestamp UTC",
-  "event_type": "record.created"
+  "created_at": "timestamp UTC"
 }
 ```
 
-Los valores son ilustrativos; el script genera el timestamp real.
+El productor usa `station_id` como clave Kafka. Incluye también headers `event_type` y `event_id`.
+
+## Configuración mediante variables de entorno
+
+- `DB_PATH`: ruta de SQLite (por defecto `data/events.db`)
+- `KAFKA_BOOTSTRAP_SERVERS`: broker Kafka (por defecto `localhost:9092`)
+- `KAFKA_TOPIC`: topic (por defecto `etl.records`)
+- `POLL_INTERVAL_SECONDS`: frecuencia de consulta (por defecto `1`)
+- `BATCH_SIZE`: máximo de eventos consultados por ciclo (por defecto `100`)
+
+Ejemplo:
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092 KAFKA_TOPIC=etl.records python producer.py
+```
 
 ## Reiniciar el laboratorio
 
-Detén el productor con Ctrl+C y elimina la base y el checkpoint:
+Detén el productor con Ctrl+C y elimina la base SQLite:
 
 ```bash
-rm -f data/events.db data/producer_checkpoint.json
+rm -f data/events.db
 python init_db.py
 ```
 
-## Semántica de entrega
+En una base nueva, ambas tablas estarán vacías y el trigger estará creado.
 
-El checkpoint avanza únicamente después de que Kafka confirme la entrega. Si el productor cae después de que Kafka recibió el evento, pero antes de guardar el checkpoint, el registro puede publicarse de nuevo al reiniciar. Por eso se trata de entrega **al menos una vez**. Los consumidores pueden deduplicar usando `record_id`.
+## Semántica y límites
 
-Si el productor está detenido cuando se inserta un registro, lo publicará al volver a arrancar. La latencia esperada de detección depende del intervalo de polling.
+- El trigger escribe en `outbox` dentro de la misma transacción que inserta el registro de negocio. Si la inserción falla, no debe quedar el evento correspondiente.
+- Si Kafka no está disponible, el evento permanece pendiente y el productor vuelve a intentarlo.
+- El productor marca un evento como publicado después de recibir la confirmación de Kafka.
+- Si el proceso cae después de que Kafka acepta el mensaje, pero antes de actualizar SQLite, el evento puede publicarse otra vez. Es una semántica de entrega **al menos una vez**, no exactamente una vez de extremo a extremo.
+- Los consumidores pueden deduplicar usando `event_id` o `record_id`.
+- Este ejemplo supone una única instancia del productor. Ejecutar varias instancias requiere incorporar reclamación/lease de eventos pendientes para evitar publicaciones concurrentes.
+- El polling añade una latencia aproximada relacionada con `POLL_INTERVAL_SECONDS`. No es un mecanismo de captura de cambios de alto rendimiento.
+
+## Preguntas de discusión
+
+1. ¿Qué responsabilidad cumple el trigger y cuál cumple el productor?
+2. ¿Por qué separar `records` y `outbox`?
+3. ¿Qué sucede si Kafka está caído al insertar un registro?
+4. ¿Por qué puede haber duplicados y cómo los evita el consumidor?
+5. ¿Qué se ganaría y qué complejidad añadiría utilizar CDC con Debezium?
