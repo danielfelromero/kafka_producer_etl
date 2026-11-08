@@ -1,32 +1,48 @@
 # Architecture and teaching notes
 
-## Why database insertion is the trigger
+## Event flow
 
-1. A source application inserts a row into SQLite.
-2. The producer polls for rows with IDs greater than its checkpoint.
-3. The row is serialized as a `record.created` event.
-4. Kafka stores the event in a topic.
-5. Independent consumers subscribe and implement downstream processing.
+1. A source application inserts a new row into `records`.
+2. A SQLite `AFTER INSERT` trigger creates a `pending` event in `outbox`.
+3. The trigger and original insert execute within the same database transaction.
+4. The Python producer polls the outbox for pending events.
+5. The producer serializes the event and publishes it to a Kafka topic.
+6. After Kafka confirms delivery, the producer marks the outbox event as `published`.
+7. Independent consumers receive the event and implement downstream processing.
 
-## Polling is not native CDC
+## Pattern: Transactional Outbox
 
-The insert does not call Kafka directly. The producer detects it during its next polling iteration. This is **polling-based change detection**, not push notification and not CDC from a transaction log.
+The outbox avoids a common dual-write problem: an application should not commit a business row and then independently try to publish a Kafka event without a durable record of the publication intent. The database trigger records that intent in the same transaction as the business insert.
+
+The producer process is not started directly by the SQLite trigger. Instead, it continuously polls the outbox. This is a simple way to demonstrate the outbox pattern without adding Debezium or a database server.
 
 ## Why SQLite
 
-- No database server or credentials are required.
-- The initial database has zero business rows.
-- Students can inspect the data directly.
-- The class can focus on the event production pattern.
+- No database server, user management, or credentials are needed.
+- A newly initialized database contains zero business rows.
+- Students can inspect the source table and outbox table.
+- The exercise focuses on event publication and downstream consumers.
 
-## Limitations and discussion questions
+## Delivery semantics
 
-1. What is the trade-off between polling interval, latency, and database load?
-2. What happens if the producer is offline while rows are inserted?
-3. Why is a persistent checkpoint required?
-4. Can an event be published twice after a crash?
-5. How would CDC with Debezium differ?
-6. What if rows can be updated or deleted?
-7. What should happen when Kafka is unavailable?
+The producer marks an outbox row as published only after Kafka confirms delivery. If it crashes after Kafka accepted the message but before the SQLite status update, the message can be published again after restart. Therefore this example provides **at-least-once delivery**, not end-to-end exactly-once semantics.
 
-The checkpoint is a high-water mark on an autoincrementing ID. It suits an introductory append-only exercise, not a complete production CDC platform.
+The `event_id` is stable and can be used by consumers for deduplication. Kafka producer idempotence helps with retries within a producer session, but it does not remove the database/Kafka dual-write boundary.
+
+This starter assumes one producer instance. Multiple concurrent producers would need an atomic claim/lease strategy for pending outbox rows.
+
+## Polling vs. CDC
+
+The producer checks the outbox every `POLL_INTERVAL_SECONDS`. This introduces bounded detection latency and repeated database queries. The SQLite trigger is database-level change handling, but the publisher still uses polling to discover work.
+
+For larger production systems, compare this design with CDC tools such as Debezium reading a database transaction log. The choice involves operational complexity, latency, throughput, and coupling to the database engine.
+
+## Discussion questions
+
+1. What does the SQLite trigger do, and what does the Kafka producer do?
+2. Why is the outbox row created in the same transaction as the business row?
+3. What happens if Kafka is unavailable when a record is inserted?
+4. Why can a duplicate event occur after a crash?
+5. How can a consumer make processing idempotent using `event_id`?
+6. What is the effect of reducing or increasing the polling interval?
+7. What additional mechanism is needed for multiple producer instances?
