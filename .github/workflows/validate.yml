@@ -18,5 +18,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile Python files
         run: python -m compileall -q .
+      - name: Validate shell scripts
+        run: bash -n setup_kafka.sh stop_kafka.sh diagnose_kafka.sh start_ngrok_classroom.sh
       - name: Test SQLite trigger and outbox
         run: python -m unittest discover -s tests -v
