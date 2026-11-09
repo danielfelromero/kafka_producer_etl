@@ -76,7 +76,7 @@ if [[ ! -x "$BORE_BIN" ]]; then
 
   ARCHIVE="${TOOLS_DIR}/bore-v${BORE_VERSION}-${BORE_ARCH}.tar.gz"
   TMP_DIR="$(mktemp -d)"
-  trap 'rm -rf "$TMP_DIR"' RETURN
+  trap 'rm -rf "$TMP_DIR"' EXIT
 
   DOWNLOAD_URL="https://github.com/ekzhang/bore/releases/download/v${BORE_VERSION}/bore-v${BORE_VERSION}-${BORE_ARCH}.tar.gz"
   echo "Descargando Bore v${BORE_VERSION}..."
@@ -90,7 +90,7 @@ if [[ ! -x "$BORE_BIN" ]]; then
   fi
   install -m 755 "${TMP_DIR}/bore" "$BORE_BIN"
   rm -rf "$TMP_DIR"
-  trap - RETURN
+  trap - EXIT
 fi
 
 rm -f "$BORE_PID_FILE" "$ENDPOINT_FILE"
