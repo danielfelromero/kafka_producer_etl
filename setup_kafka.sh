@@ -31,21 +31,21 @@ fi
 
 EXTERNAL_ADDRESS=""
 if [[ "$PROFILE" == "CLASSROOM" ]]; then
-  ENDPOINT_FILE="${STATE_DIR}/ngrok_tcp_address"
-  NGROK_PID_FILE="${STATE_DIR}/ngrok.pid"
+  ENDPOINT_FILE="${STATE_DIR}/tunnel_address"
+  TUNNEL_PID_FILE="${STATE_DIR}/tunnel.pid"
 
   if [[ ! -s "$ENDPOINT_FILE" ]]; then
-    echo "No se encuentra el endpoint TCP de ngrok." >&2
-    echo "Ejecuta primero ./start_ngrok_classroom.sh y deja esa terminal abierta." >&2
+    echo "No se encuentra la dirección TCP del túnel." >&2
+    echo "Ejecuta primero ./start_classroom.sh y deja esa terminal abierta." >&2
     exit 2
   fi
-  if [[ ! -s "$NGROK_PID_FILE" ]] || ! kill -0 "$(cat "$NGROK_PID_FILE")" 2>/dev/null; then
-    echo "El proceso de ngrok no está activo. Inicia de nuevo ./start_ngrok_classroom.sh." >&2
+  if [[ ! -s "$TUNNEL_PID_FILE" ]] || ! kill -0 "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null; then
+    echo "El proceso del túnel no está activo. Inicia de nuevo ./start_classroom.sh." >&2
     exit 2
   fi
 
-  EXTERNAL_ADDRESS="$(cat "$ENDPOINT_FILE" | tr -d '[:space:]')"
-  if [[ ! "$EXTERNAL_ADDRESS" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]]; then
+  EXTERNAL_ADDRESS="$(tr -d '[:space:]' < "$ENDPOINT_FILE")"
+  if [[ ! "$EXTERNAL_ADDRESS" =~ ^bore\.pub:[0-9]+$ ]]; then
     echo "Dirección TCP inválida en $ENDPOINT_FILE: $EXTERNAL_ADDRESS" >&2
     exit 2
   fi
