@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # Kafka 3.9.1 en KRaft: perfil LOCAL o CLASSROOM.
-# CLASSROOM utiliza un endpoint TCP público de ngrok sin TLS ni autenticación.
+# CLASSROOM utiliza un endpoint TCP público de Bore sin TLS ni autenticación.
 # Úsalo solo para laboratorio temporal y con datos no sensibles.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
