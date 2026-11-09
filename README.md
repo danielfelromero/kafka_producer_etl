@@ -385,8 +385,6 @@ Se recomienda utilizar `./start_classroom.sh` en adelante.
 
 # Transactional Outbox: semántica y límites
 
-
-
 - El trigger escribe en `outbox` dentro de la misma transacción que inserta el registro de negocio.
 - Si Kafka no está disponible, el evento permanece pendiente y el productor vuelve a intentarlo.
 - El productor marca un evento como publicado después de recibir la confirmación de Kafka.
