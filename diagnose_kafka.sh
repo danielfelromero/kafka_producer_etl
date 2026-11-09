@@ -8,6 +8,7 @@ BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
 TOPIC="${KAFKA_TOPIC:-etl.records}"
 PROFILE_FILE="${PROJECT_ROOT}/.kafka/profile"
 CONFIG_FILE="${PROJECT_ROOT}/.kafka/server.properties"
+ENDPOINT_FILE="${PROJECT_ROOT}/.kafka/ngrok_tcp_address"
 
 if [[ ! -x "${KAFKA_HOME}/bin/kafka-broker-api-versions.sh" ]]; then
   echo "No se encuentra Kafka CLI. Ejecuta primero ./setup_kafka.sh" >&2
@@ -31,15 +32,11 @@ echo "Offsets por partición:"
 
 if [[ -f "$PROFILE_FILE" && "$(cat "$PROFILE_FILE")" == "CLASSROOM" ]]; then
   echo
-  echo "Perfil: CLASSROOM"
-  echo "Listeners y metadata anunciada:"
-  grep -E '^(listeners|advertised.listeners|inter.broker.listener.name|listener.security.protocol.map|authorizer.class.name|super.users)=' "$CONFIG_FILE" || true
-  echo
-  echo "ACL del topic:"
-  "${KAFKA_HOME}/bin/kafka-acls.sh" --bootstrap-server "${BOOTSTRAP_SERVERS}" --list --topic "$TOPIC"
-  echo
-  echo "ACL de consumer groups student- (prefijo):"
-  "${KAFKA_HOME}/bin/kafka-acls.sh" --bootstrap-server "${BOOTSTRAP_SERVERS}" --list --group "student-" --resource-pattern-type prefixed
-  echo
-  echo "Contraseña del consumer almacenada en .kafka/student_password."
+  echo "Perfil: CLASSROOM (sin autenticación ni cifrado)"
+  echo "Listeners y direcciones anunciadas:"
+  grep -E '^(listeners|advertised.listeners|inter.broker.listener.name|listener.security.protocol.map)=' "$CONFIG_FILE" || true
+  if [[ -s "$ENDPOINT_FILE" ]]; then
+    echo
+    echo "Endpoint TCP ngrok: $(cat "$ENDPOINT_FILE")"
+  fi
 fi
