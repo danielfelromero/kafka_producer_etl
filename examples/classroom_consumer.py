@@ -1,10 +1,10 @@
 """Consumer de ejemplo para estudiantes conectados al broker del docente.
 
-Variables de entorno requeridas:
-  KAFKA_BOOTSTRAP_SERVERS: dominio público ngrok, por ejemplo my-domain.ngrok.app:443
-  KAFKA_USERNAME: student
-  KAFKA_PASSWORD: contraseña compartida por el docente
-  CONSUMER_GROUP: identificador único, por ejemplo student-ana
+El docente debe compartir el endpoint TCP mostrado por:
+  cat .kafka/ngrok_tcp_address
+
+Cada estudiante debe utilizar un group.id diferente si todos necesitan
+recibir independientemente los mismos eventos.
 """
 
 import json
@@ -14,32 +14,21 @@ import sys
 from confluent_kafka import Consumer, KafkaException
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
-USERNAME = os.getenv("KAFKA_USERNAME", "student")
-PASSWORD = os.getenv("KAFKA_PASSWORD")
 CONSUMER_GROUP = os.getenv("CONSUMER_GROUP", "student-change-this")
 TOPIC = os.getenv("KAFKA_TOPIC", "etl.records")
 
-missing = [
-    name
-    for name, value in {
-        "KAFKA_BOOTSTRAP_SERVERS": BOOTSTRAP_SERVERS,
-        "KAFKA_PASSWORD": PASSWORD,
-    }.items()
-    if not value
-]
-if missing:
-    raise SystemExit(f"Define estas variables de entorno: {', '.join(missing)}")
+if not BOOTSTRAP_SERVERS:
+    raise SystemExit(
+        "Define KAFKA_BOOTSTRAP_SERVERS con el host:puerto TCP asignado por ngrok."
+    )
 
 if not CONSUMER_GROUP.startswith("student-"):
-    raise SystemExit("CONSUMER_GROUP debe comenzar por 'student-' (ACL del laboratorio).")
+    raise SystemExit("Usa un CONSUMER_GROUP que comience por 'student-'.")
 
 consumer = Consumer(
     {
         "bootstrap.servers": BOOTSTRAP_SERVERS,
-        "security.protocol": "SASL_SSL",
-        "sasl.mechanism": "PLAIN",
-        "sasl.username": USERNAME,
-        "sasl.password": PASSWORD,
+        "security.protocol": "PLAINTEXT",
         "group.id": CONSUMER_GROUP,
         "auto.offset.reset": "latest",
         "enable.auto.commit": False,
