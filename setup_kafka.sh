@@ -75,80 +75,13 @@ if [[ -f "$KAFKA_PID" ]] && kill -0 "$(cat "$KAFKA_PID")" 2>/dev/null; then
 fi
 rm -f "$KAFKA_PID"
 
-# Genera una configuración independiente a partir de la plantilla KRaft.
-# No agrega SASL, TLS, authorizer ni ACL en el perfil CLASSROOM.
-export KAFKA_TEMPLATE KAFKA_CONFIG KAFKA_DATA PROFILE EXTERNAL_ADDRESS
-python - <<'PY'
-import os
-from pathlib import Path
-
-template = Path(os.environ["KAFKA_TEMPLATE"])
-destination = Path(os.environ["KAFKA_CONFIG"])
-profile = os.environ["PROFILE"]
-data_dir = str(Path(os.environ["KAFKA_DATA"]).resolve())
-external_address = os.environ["EXTERNAL_ADDRESS"]
-
-lines = template.read_text(encoding="utf-8").splitlines()
-override_keys = {
-    "controller.quorum.voters",
-    "controller.listener.names",
-    "log.dirs",
-    "listeners",
-    "advertised.listeners",
-    "inter.broker.listener.name",
-    "listener.security.protocol.map",
-    "sasl.enabled.mechanisms",
-    "listener.name.external.plain.sasl.jaas.config",
-    "authorizer.class.name",
-    "super.users",
-    "allow.everyone.if.no.acl.found",
-}
-kept = [
-    line for line in lines
-    if not any(line.strip().startswith(f"{key}=") for key in override_keys)
-]
-
-overrides = {
-    "controller.quorum.voters": "1@127.0.0.1:9093",
-    "controller.listener.names": "CONTROLLER",
-    "log.dirs": data_dir,
-}
-
-if profile == "LOCAL":
-    overrides.update({
-        "listeners": "PLAINTEXT://127.0.0.1:9092,CONTROLLER://127.0.0.1:9093",
-        "advertised.listeners": "PLAINTEXT://localhost:9092",
-        "inter.broker.listener.name": "PLAINTEXT",
-        "listener.security.protocol.map": "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
-    })
-else:
-    overrides.update({
-        "listeners": (
-            "INTERNAL://127.0.0.1:9092,"
-            "EXTERNAL://127.0.0.1:19092,"
-            "CONTROLLER://127.0.0.1:9093"
-        ),
-        "advertised.listeners": (
-            f"INTERNAL://localhost:9092,EXTERNAL://{external_address}"
-        ),
-        "inter.broker.listener.name": "INTERNAL",
-        "listener.security.protocol.map": (
-            "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
-        ),
-    })
-
-kept.extend(f"{key}={value}" for key, value in overrides.items())
-destination.write_text("\n".join(kept) + "\n", encoding="utf-8")
-destination.chmod(0o600)
-
-print(f"Configuración generada: {destination}")
-print(f"Perfil: {profile}")
-if profile == "CLASSROOM":
-    print("Listener interno: localhost:9092")
-    print("Listener externo Kafka: 127.0.0.1:19092")
-    print(f"Dirección externa anunciada: {external_address}")
-    print("Seguridad externa: PLAINTEXT sin autenticación ni cifrado.")
-PY
+# Renderiza la configuración con una función Python testeable.
+python "${PROJECT_ROOT}/configure_kafka.py" \
+  --template "$KAFKA_TEMPLATE" \
+  --destination "$KAFKA_CONFIG" \
+  --data-dir "$KAFKA_DATA" \
+  --profile "$PROFILE" \
+  --external-address "$EXTERNAL_ADDRESS"
 
 if [[ ! -f "$KAFKA_DATA/meta.properties" ]]; then
   echo "Inicializando almacenamiento KRaft para un broker..."
