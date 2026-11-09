@@ -184,47 +184,60 @@ Si Kafka ya está ejecutándose en modo LOCAL, detenlo antes de cambiar de perfi
 ./stop_kafka.sh
 ```
 
-## 5. Terminal A: iniciar primero el túnel TCP de ngrok
+## 5. Arrancar todo el entorno aula con un único comando
 
-Es necesario iniciar ngrok **antes que Kafka**, porque ngrok asigna dinámicamente el host y el puerto públicos. Kafka necesita conocer esa dirección antes de arrancar para anunciarla mediante `advertised.listeners`.
+Crea el archivo local de configuración:
 
-Ejecuta:
+```bash
+cp .env.classroom.example .env.classroom
+```
+
+Su contenido es:
+
+```dotenv
+KAFKA_PROFILE=CLASSROOM
+KAFKA_TOPIC=etl.records
+```
+
+Si Kafka está ejecutándose en modo LOCAL, detenlo primero:
+
+```bash
+./stop_kafka.sh
+```
+
+Ahora ejecuta en una sola terminal:
 
 ```bash
 ./start_ngrok_classroom.sh
 ```
 
-El script:
-1. Ejecuta `ngrok tcp 19092`.
-2. Consulta la API local del agente ngrok en `127.0.0.1:4040`.
-3. Recupera la dirección pública asignada, por ejemplo `1.tcp.ngrok.io:23456`.
-4. Guarda la dirección en `.kafka/ngrok_tcp_address`.
-5. Mantiene activo el proceso ngrok.
+El script realiza automáticamente estos pasos:
+
+1. Inicia `ngrok tcp 19092`.
+2. Captura el host y puerto TCP asignados por ngrok mediante su API local.
+3. Guarda el endpoint en `.kafka/ngrok_tcp_address`.
+4. Arranca Kafka en KRaft con el listener externo `127.0.0.1:19092`.
+5. Configura `advertised.listeners` con la dirección pública correcta.
+6. Mantiene ngrok activo mientras dure la sesión.
 
 La salida será similar a:
 
 ```text
-Endpoint TCP asignado por ngrok: 1.tcp.ngrok.io:23456
-Ahora abre otra terminal y ejecuta ./setup_kafka.sh.
+1/3 Iniciando ngrok TCP hacia 127.0.0.1:19092...
+2/3 Esperando la dirección TCP asignada por ngrok...
+Endpoint TCP: 1.tcp.ngrok.io:23456
+3/3 Iniciando Kafka en modo CLASSROOM...
 
-Túnel activo. No cierres esta terminal durante la sesión.
+ENTORNO DE AULA LISTO
+Kafka local del docente: localhost:9092
+Endpoint TCP para estudiantes: 1.tcp.ngrok.io:23456
+Topic: etl.records
+Seguridad: PLAINTEXT sin autenticación ni cifrado.
 ```
 
-Deja esta terminal abierta.
+Deja esta terminal abierta durante la clase. Si presionas `Ctrl+C`, el script detiene Kafka y ngrok.
 
-## 6. Terminal B: iniciar Kafka en modo CLASSROOM
-
-Abre otra terminal en el mismo Codespace. Carga las variables y ejecuta Kafka:
-
-```bash
-set -a
-source .env.classroom
-set +a
-
-./setup_kafka.sh
-```
-
-El script lee `.kafka/ngrok_tcp_address` y genera la configuración Kafka con dos listeners:
+Kafka queda configurado con estos listeners:
 
 | Listener | Dirección | Función |
 |---|---|---|
@@ -232,15 +245,13 @@ El script lee `.kafka/ngrok_tcp_address` y genera la configuración Kafka con do
 | EXTERNAL | `127.0.0.1:19092` | Conexiones que llegan desde ngrok |
 | CONTROLLER | `127.0.0.1:9093` | Quorum KRaft |
 
-Kafka anunciará:
+Kafka anunciará la dirección pública que ngrok asignó en esa ejecución, por ejemplo:
 
 ```properties
 advertised.listeners=INTERNAL://localhost:9092,EXTERNAL://1.tcp.ngrok.io:23456
 ```
 
-Los valores reales se toman automáticamente del endpoint TCP de ngrok.
-
-El listener externo utiliza `PLAINTEXT`: no hay SASL, TLS, autenticación, authorizer ni ACL. El Producer del docente conserva `localhost:9092`; no requiere cambiar su código.
+El Producer del docente conserva `localhost:9092`; no requiere cambiar su código.
 
 ## 7. Obtener la dirección para los estudiantes
 
@@ -373,15 +384,9 @@ Si el consumer logra conectarse al bootstrap pero después falla al pedir metada
 
 ## 12. Detener el laboratorio
 
-1. En Terminal B, detén Kafka:
+En la terminal donde ejecutaste `./start_ngrok_classroom.sh`, presiona `Ctrl+C`. El script detiene Kafka y ngrok y elimina el endpoint local guardado.
 
-```bash
-./stop_kafka.sh
-```
-
-2. En Terminal A, presiona Ctrl+C para detener ngrok.
-
-El endpoint TCP dinámico deja de estar disponible. En la siguiente sesión ngrok podría asignar otra dirección, por lo que se debe repetir el procedimiento: iniciar ngrok, capturar el endpoint y después iniciar Kafka.
+El endpoint TCP dinámico deja de estar disponible. En la siguiente sesión ngrok podría asignar otra dirección; basta con volver a ejecutar `./start_ngrok_classroom.sh` para iniciar todo el entorno y obtener la nueva dirección.
 
 ## Límites del laboratorio
 
