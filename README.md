@@ -29,10 +29,61 @@ Este diseño introduce el patrón **Transactional Outbox** de forma sencilla. El
 ## Requisitos
 
 - Python 3.10+
-- Apache Kafka accesible por TCP desde el entorno del productor
+- Apache Kafka 3.9.1 (el script de inicio lo descarga en el workspace)
+- Java compatible con la distribución de Kafka
 - `confluent-kafka`
 
-## Instalación
+## 1. Descargar e iniciar Kafka (KRaft)
+
+**Antes de ejecutar `producer.py`, debes iniciar el broker.** Este repositorio incluye scripts para descargar Apache Kafka, inicializar el almacenamiento KRaft de un solo nodo y levantar el servicio localmente en `localhost:9092`.
+
+Desde la raíz del repositorio, ejecuta:
+
+```bash
+chmod +x setup_kafka.sh diagnose_kafka.sh stop_kafka.sh
+./setup_kafka.sh
+```
+
+La primera ejecución descarga Apache Kafka 3.9.1 y puede tardar. Las siguientes reutilizan la distribución descargada. El script:
+
+1. Descarga y descomprime Kafka en `kafka_2.13-3.9.1/`.
+2. Inicializa el almacenamiento KRaft en `.kafka/data/` si todavía no existe.
+3. Inicia el broker en segundo plano.
+4. Espera a que el broker responda en `localhost:9092`.
+5. Crea el topic `etl.records` con 3 particiones y factor de replicación 1.
+
+El laboratorio utiliza **un único broker**, por lo que el factor de replicación debe ser 1. Tres particiones no significan tres brokers.
+
+Para comprobar el broker y el topic:
+
+```bash
+./diagnose_kafka.sh
+```
+
+Para consultar los comandos nativos de Kafka, utiliza su ruta dentro de la distribución descargada. Por ejemplo:
+
+```bash
+./kafka_2.13-3.9.1/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+./kafka_2.13-3.9.1/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --topic etl.records
+```
+
+**Nota:** `kafka-topics.sh` no se instala como comando global ni forma parte del entorno virtual de Python. Por eso escribir solamente `kafka-topics.sh` produce `command not found`. Debes invocarlo mediante la ruta anterior.
+
+Para detener Kafka sin eliminar los datos:
+
+```bash
+./stop_kafka.sh
+```
+
+Los datos persistentes del broker permanecen en `.kafka/data/`. No elimines ese directorio para una detención normal.
+
+## 2. Instalar las dependencias Python
+
+En otra terminal o después de iniciar Kafka:
 
 ```bash
 python -m venv .venv
@@ -40,7 +91,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 1. Inicializar la base de datos vacía
+## 3. Inicializar la base de datos vacía
 
 ```bash
 python init_db.py
@@ -56,31 +107,33 @@ python -c "import sqlite3; c=sqlite3.connect('data/events.db'); print('records:'
 
 Ambos conteos deben ser cero en una inicialización nueva.
 
-## 2. Preparar Kafka
+## 4. Iniciar el productor
 
-El ejemplo asume un broker accesible en `localhost:9092` y un topic llamado `etl.records`.
-
-```bash
-kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic etl.records --partitions 3 --replication-factor 1
-```
-
-Para cambiar los parámetros, utiliza las variables de entorno descritas más adelante.
-
-## 3. Iniciar el productor
-
-En una terminal:
+Asegúrate de que Kafka esté activo y que el topic `etl.records` exista. En una terminal:
 
 ```bash
+source .venv/bin/activate
 python producer.py
 ```
 
 El productor permanece activo y consulta la tabla `outbox` cada segundo. Solo intenta publicar los eventos cuyo estado sea `pending`.
 
-## 4. Insertar registros
+En la salida inicial debe aparecer:
+
+```text
+Watching SQLite outbox: data/events.db
+Kafka bootstrap: localhost:9092 | topic: etl.records
+Waiting for pending events. Press Ctrl+C to stop.
+```
+
+Si aparecen errores `Connection refused`, comprueba primero que el broker esté levantado con `./diagnose_kafka.sh`. No es un error de SQLite ni del entorno virtual: significa que el cliente no puede conectarse al broker configurado.
+
+## 5. Insertar registros
 
 En otra terminal:
 
 ```bash
+source .venv/bin/activate
 python insert_record.py --station ST-01 --temperature 27.4 --humidity 71.2 --status normal
 python insert_record.py --station ST-02 --temperature 31.8 --humidity 83.0 --status alert
 ```
@@ -93,7 +146,9 @@ Al insertar una fila en `records`, el trigger crea la fila relacionada en `outbo
 python -c "import sqlite3; c=sqlite3.connect('data/events.db'); print('records:', c.execute('select * from records').fetchall()); print('outbox:', c.execute('select * from outbox').fetchall())"
 ```
 
-## 5. Estructura del evento Kafka
+En la terminal del productor deberías observar un mensaje `PUBLISHED` con el identificador del evento, topic, partición y offset.
+
+## 6. Estructura del evento Kafka
 
 ```json
 {
@@ -126,14 +181,14 @@ KAFKA_BOOTSTRAP_SERVERS=localhost:9092 KAFKA_TOPIC=etl.records python producer.p
 
 ## Reiniciar el laboratorio
 
-Detén el productor con Ctrl+C y elimina la base SQLite:
+Detén el productor con Ctrl+C. Si quieres reiniciar únicamente la base de datos SQLite:
 
 ```bash
 rm -f data/events.db
 python init_db.py
 ```
 
-En una base nueva, ambas tablas estarán vacías y el trigger estará creado.
+Esto no elimina ni reinicia el broker Kafka. Para detener Kafka, utiliza `./stop_kafka.sh`. En una base nueva, ambas tablas estarán vacías y el trigger estará creado.
 
 ## Semántica y límites
 
@@ -144,6 +199,7 @@ En una base nueva, ambas tablas estarán vacías y el trigger estará creado.
 - Los consumidores pueden deduplicar usando `event_id` o `record_id`.
 - Este ejemplo supone una única instancia del productor. Ejecutar varias instancias requiere incorporar reclamación/lease de eventos pendientes para evitar publicaciones concurrentes.
 - El polling añade una latencia aproximada relacionada con `POLL_INTERVAL_SECONDS`. No es un mecanismo de captura de cambios de alto rendimiento.
+- Este laboratorio utiliza un broker local de un solo nodo, sin tolerancia a fallos ni configuración de acceso remoto para Colab.
 
 ## Preguntas de discusión
 
