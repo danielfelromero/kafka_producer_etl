@@ -147,7 +147,7 @@ while time.time() < deadline:
     match = pattern.search(content)
     if match:
         address = f"bore.pub:{match.group(1)}"
-        destination.write_text(address + "\\n", encoding="utf-8")
+        destination.write_text(address + "\n", encoding="utf-8")
         print(f"Endpoint TCP asignado: {address}")
         sys.exit(0)
 
