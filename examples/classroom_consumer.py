@@ -1,7 +1,7 @@
 """Consumer de ejemplo para estudiantes conectados al broker del docente.
 
 El docente debe compartir el endpoint TCP mostrado por:
-  cat .kafka/ngrok_tcp_address
+  cat .kafka/tunnel_address
 
 Cada estudiante debe utilizar un group.id diferente si todos necesitan
 recibir independientemente los mismos eventos.
@@ -19,7 +19,7 @@ TOPIC = os.getenv("KAFKA_TOPIC", "etl.records")
 
 if not BOOTSTRAP_SERVERS:
     raise SystemExit(
-        "Define KAFKA_BOOTSTRAP_SERVERS con el host:puerto TCP asignado por ngrok."
+        "Define KAFKA_BOOTSTRAP_SERVERS con el host:puerto TCP asignado por Bore (bore.pub)."
     )
 
 if not CONSUMER_GROUP.startswith("student-"):
