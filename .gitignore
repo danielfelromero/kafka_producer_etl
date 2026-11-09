@@ -4,3 +4,9 @@ __pycache__/
 data/*.db
 data/*.json
 .env
+
+# Apache Kafka local distribution and runtime state
+kafka_2.13-3.9.1/
+kafka_2.13-3.9.1.tgz
+.kafka/
+*.bak
