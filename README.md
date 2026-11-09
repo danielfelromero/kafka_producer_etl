@@ -186,26 +186,7 @@ Si Kafka ya está ejecutándose en modo LOCAL, detenlo antes de cambiar de perfi
 
 ## 5. Arrancar todo el entorno aula con un único comando
 
-Crea el archivo local de configuración:
-
-```bash
-cp .env.classroom.example .env.classroom
-```
-
-Su contenido es:
-
-```dotenv
-KAFKA_PROFILE=CLASSROOM
-KAFKA_TOPIC=etl.records
-```
-
-Si Kafka está ejecutándose en modo LOCAL, detenlo primero:
-
-```bash
-./stop_kafka.sh
-```
-
-Ahora ejecuta en una sola terminal:
+Con el perfil configurado en el paso anterior y Kafka local detenido, ejecuta en una sola terminal:
 
 ```bash
 ./start_ngrok_classroom.sh
