@@ -109,7 +109,7 @@ def main() -> None:
     parser.add_argument("--external-address", default="")
     args = parser.parse_args()
 
-    rendered = generate_config(
+    generate_config(
         template_path=args.template,
         destination_path=args.destination,
         data_dir=args.data_dir,
