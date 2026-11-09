@@ -20,5 +20,5 @@ jobs:
         run: python -m compileall -q .
       - name: Validate shell scripts
         run: bash -n setup_kafka.sh stop_kafka.sh diagnose_kafka.sh start_classroom.sh start_ngrok_classroom.sh
-      - name: Test SQLite trigger and outbox
+      - name: Test Kafka listener configuration profiles\n        run: python -m unittest tests.test_kafka_config -v\n      - name: Test SQLite trigger and outbox
         run: python -m unittest discover -s tests -v
