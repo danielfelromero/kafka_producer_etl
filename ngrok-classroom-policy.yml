@@ -1,0 +1,4 @@
+version: 3
+on_tcp_connect:
+  - actions:
+      - type: terminate-tls
