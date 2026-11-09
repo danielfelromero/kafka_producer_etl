@@ -14,3 +14,4 @@ kafka_2.13-3.9.1.tgz
 # Private classroom configuration
 .env.classroom
 .env.classroom.*.local
+\n# Local tunnel/client binaries downloaded by classroom scripts\n.tools/\n
